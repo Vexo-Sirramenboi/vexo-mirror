@@ -1,53 +1,18 @@
 
-name: Mirror V3lla
-
-on:
-  workflow_dispatch:
-  schedule:
-    - cron: "0 6 * * *"
-
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-jobs:
-  mirror:
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Download bucket root
-        run: |
-          mkdir -p site
-          wget \
-            --recursive \
-            --level=inf \
-            --no-parent \
-            --convert-links \
-            --adjust-extension \
-            --execute robots=off \
-            --directory-prefix=site \
-            https://s3.amazonaws.com/v3lla/
-
-      - name: Inspect downloaded files
-        run: |
-          find site -type f | sort | head -200
-          test -n "$(find site -type f -print -quit)"
-
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
-
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: site
-
-      - name: Deploy
-        id: deployment
-        uses: actions/deploy-pages@v4
+- name: Check known asset URLs
+  run: |
+    for path in \
+      "index.html" \
+      "assets/core.js" \
+      "assets/cfg.js" \
+      "assets/work.js" \
+      "assets/rw.js" \
+      "assets/rw.wasm" \
+      "assets/rw-sync.js" \
+      "errorpage.html"
+    do
+      code=$(curl -sS -L -o /dev/null \
+        -w '%{http_code}' \
+        "https://s3.amazonaws.com/v3lla/$path")
+      echo "$code  $path"
+    done
