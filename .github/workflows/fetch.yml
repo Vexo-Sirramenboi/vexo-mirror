@@ -1,27 +1,67 @@
 
-name: Check V3lla Assets
+name: Mirror V3lla
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * *"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
 
 jobs:
-  check-assets:
+  mirror:
     runs-on: ubuntu-latest
     steps:
-      - name: Check known asset URLs
+      - uses: actions/checkout@v4
+
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y wget curl
+
+      - name: Crawl and download site
+        shell: bash
         run: |
+          set -euo pipefail
+          mkdir -p site
+
+          wget \
+            --recursive \
+            --level=inf \
+            --no-parent \
+            --domains=s3.amazonaws.com \
+            --accept-regex='s3\.amazonaws\.com/v3lla/.*' \
+            --execute robots=off \
+            --adjust-extension \
+            --convert-links \
+            --directory-prefix=site \
+            https://s3.amazonaws.com/v3lla/index.html \
+            2>&1 | tee crawl.log
+
+          # Download known runtime paths even if the crawler misses them.
           for path in \
-            "index.html" \
-            "assets/core.js" \
-            "assets/cfg.js" \
-            "assets/work.js" \
-            "assets/rw.js" \
-            "assets/rw.wasm" \
-            "assets/rw-sync.js" \
-            "errorpage.html"
+            assets/core.js \
+            assets/cfg.js \
+            assets/work.js \
+            assets/rw.js \
+            assets/rw.wasm \
+            assets/rw-sync.js \
+            errorpage.html
           do
-            code=$(curl -sS -L -o /dev/null \
-              -w '%{http_code}' \
-              "https://s3.amazonaws.com/v3lla/$path")
-            echo "$code  $path"
+            mkdir -p "site/$(dirname "$path")"
+            curl -fsSL \
+              "https://s3.amazonaws.com/v3lla/$path" \
+              -o "site/$path"
           done
+
+          echo "Downloaded files:"
+          find site -type f | sort
+
+      - name: Upload website artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4
