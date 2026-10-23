@@ -1,5 +1,5 @@
 
-name: Mirror V3lla
+name: Mirror V3lla Files
 
 on:
   workflow_dispatch:
@@ -7,39 +7,28 @@ on:
     - cron: "0 6 * * *"
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 jobs:
   mirror:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Install tools
-        run: sudo apt-get update && sudo apt-get install -y wget curl
-
-      - name: Crawl and download site
+      - name: Download website files
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p site
 
-          wget \
-            --recursive \
-            --level=inf \
-            --no-parent \
-            --domains=s3.amazonaws.com \
-            --accept-regex='s3\.amazonaws\.com/v3lla/.*' \
-            --execute robots=off \
-            --adjust-extension \
-            --convert-links \
-            --directory-prefix=site \
-            https://s3.amazonaws.com/v3lla/index.html \
-            2>&1 | tee crawl.log
+          BASE="https://s3.amazonaws.com/v3lla"
+          mkdir -p assets
 
-          # Download known runtime paths even if the crawler misses them.
+          # Download the entry point.
+          curl -fsSL "$BASE/index.html" -o index.html
+
+          # Download known runtime files.
           for path in \
             assets/core.js \
             assets/cfg.js \
@@ -49,19 +38,39 @@ jobs:
             assets/rw-sync.js \
             errorpage.html
           do
-            mkdir -p "site/$(dirname "$path")"
-            curl -fsSL \
-              "https://s3.amazonaws.com/v3lla/$path" \
-              -o "site/$path"
+            mkdir -p "$(dirname "$path")"
+            curl -fsSL "$BASE/$path" -o "$path"
           done
 
-          echo "Downloaded files:"
-          find site -type f | sort
+          # Crawl linked resources from the S3 host.
+          wget \
+            --recursive \
+            --level=inf \
+            --no-parent \
+            --domains=s3.amazonaws.com \
+            --accept-regex='s3\.amazonaws\.com/v3lla/.*' \
+            --execute robots=off \
+            --no-host-directories \
+            --cut-dirs=1 \
+            --directory-prefix=. \
+            "$BASE/index.html" || true
 
-      - name: Upload website artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: site
+          echo "Files downloaded:"
+          find . -type f \
+            ! -path './.git/*' \
+            ! -path './.github/*' \
+            | sort
 
-      - name: Deploy to GitHub Pages
-        uses: actions/deploy-pages@v4
+      - name: Commit downloaded files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "Mirror website files"
+            git push
+          fi
