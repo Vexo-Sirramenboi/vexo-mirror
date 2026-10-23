@@ -1,18 +1,27 @@
 
-- name: Check known asset URLs
-  run: |
-    for path in \
-      "index.html" \
-      "assets/core.js" \
-      "assets/cfg.js" \
-      "assets/work.js" \
-      "assets/rw.js" \
-      "assets/rw.wasm" \
-      "assets/rw-sync.js" \
-      "errorpage.html"
-    do
-      code=$(curl -sS -L -o /dev/null \
-        -w '%{http_code}' \
-        "https://s3.amazonaws.com/v3lla/$path")
-      echo "$code  $path"
-    done
+name: Check V3lla Assets
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check-assets:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check known asset URLs
+        run: |
+          for path in \
+            "index.html" \
+            "assets/core.js" \
+            "assets/cfg.js" \
+            "assets/work.js" \
+            "assets/rw.js" \
+            "assets/rw.wasm" \
+            "assets/rw-sync.js" \
+            "errorpage.html"
+          do
+            code=$(curl -sS -L -o /dev/null \
+              -w '%{http_code}' \
+              "https://s3.amazonaws.com/v3lla/$path")
+            echo "$code  $path"
+          done
