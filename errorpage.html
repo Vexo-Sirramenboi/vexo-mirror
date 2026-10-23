@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>vella</title>
+<style>
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:40px 16px;text-align:center;background:#0b0512;color:#f4e8ff;font:14px/1.5 "Figtree",system-ui,sans-serif}
+.sign{font:400 clamp(84px,12vw,124px)/.8 "Sacramento","Brush Script MT",cursive;color:transparent;-webkit-text-stroke:1.4px rgba(180,150,200,.7);margin-bottom:20px;padding:0 .2em;animation:dead 6s linear infinite}
+@keyframes dead{0%,46%,50%,100%{opacity:.55}47%{opacity:1}48%{opacity:.35}49%{opacity:.9}}
+h2{margin:0;font-size:21px;font-weight:600}
+p{margin:0;color:#a58fc0;max-width:440px;word-break:break-word}
+.b{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap;justify-content:center}
+button{height:40px;padding:0 18px;border-radius:20px;border:1px solid #2d1c42;background:#1b0f2a;color:#f4e8ff;cursor:pointer;font:500 14px "Figtree",sans-serif}
+button.pri{background:#ff7ad9;color:#1d0622;border-color:#ff7ad9}
+button:hover{border-color:#ff7ad9}
+details{margin-top:22px;color:#7c6696;max-width:520px}
+summary{cursor:pointer}
+pre{white-space:pre-wrap;text-align:left;font-size:12px;color:#8a76a0;max-height:180px;overflow:auto;margin-top:10px}
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600&family=Sacramento&display=swap">
+</head>
+<body>
+<div class="sign">vella</div>
+<h2>This site didn't load</h2>
+<p id="host"></p>
+<div class="b">
+  <button class="pri" id="retry">Try again</button>
+  <button id="swap"></button>
+</div>
+<details id="tw" hidden><summary>Details</summary><pre id="trace"></pre></details>
+<script>
+(() => {
+  let ctx = {};
+  try { ctx = JSON.parse("__CTX__"); } catch (e) {}
+  const url = ctx.url || "";
+  const other = ctx.engine === "alt" ? "std" : "alt";
+  const otherName = other === "std" ? "Scramjet" : "Ultraviolet";
+  document.documentElement.setAttribute("data-vl-err", ctx.engine || "1");
+  document.documentElement.setAttribute("data-vl-url", url);
+  document.getElementById("host").textContent = url || ctx.host || "";
+  const swap = document.getElementById("swap");
+  swap.textContent = "Try in " + otherName;
+  document.getElementById("retry").onclick = () => post("retry");
+  swap.onclick = () => post("swap", other);
+  if (ctx.trace) { document.getElementById("tw").hidden = false; document.getElementById("trace").textContent = ctx.trace; }
+  function post(action, engine) {
+    try { parent.postMessage({ type: "vl-error", action, engine, url, from: ctx.engine }, location.origin); } catch (e) {}
+  }
+  try { parent.postMessage({ type: "vl-error", action: "shown", url, from: ctx.engine }, location.origin); } catch (e) {}
+})();
+</script>
+</body>
+</html>
