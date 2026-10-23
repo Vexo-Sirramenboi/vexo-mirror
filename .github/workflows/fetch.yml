@@ -17,60 +17,140 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Download website files
+      - name: Install crawler dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3 python3-bs4
+
+      - name: Download and discover dependencies
         shell: bash
         run: |
           set -euo pipefail
 
-          BASE="https://s3.amazonaws.com/v3lla"
-          mkdir -p assets
+          export BASE="https://s3.amazonaws.com/v3lla"
+          export ROOT="."
 
-          # Download the entry point.
-          curl -fsSL "$BASE/index.html" -o index.html
+          python3 - <<'PY'
+          import os, re, subprocess
+          from collections import deque
+          from urllib.parse import urljoin, urlparse, unquote
+          from html.parser import HTMLParser
 
-          # Download known runtime files.
-          for path in \
-            assets/core.js \
-            assets/cfg.js \
-            assets/work.js \
-            assets/rw.js \
-            assets/rw.wasm \
-            assets/rw-sync.js \
-            errorpage.html
-          do
-            mkdir -p "$(dirname "$path")"
-            curl -fsSL "$BASE/$path" -o "$path"
-          done
+          base = os.environ["BASE"].rstrip("/")
+          root = os.environ["ROOT"]
+          seen = set()
+          queue = deque([
+              base + "/index.html",
+              *[base + "/" + p for p in [
+                  "assets/core.js",
+                  "assets/cfg.js",
+                  "assets/work.js",
+                  "assets/rw.js",
+                  "assets/rw.wasm",
+                  "assets/rw-sync.js",
+                  "errorpage.html",
+              ]]
+          ])
 
-          # Crawl linked resources from the S3 host.
-          wget \
-            --recursive \
-            --level=inf \
-            --no-parent \
-            --domains=s3.amazonaws.com \
-            --accept-regex='s3\.amazonaws\.com/v3lla/.*' \
-            --execute robots=off \
-            --no-host-directories \
-            --cut-dirs=1 \
-            --directory-prefix=. \
-            "$BASE/index.html" || true
+          # Extract URLs and common relative asset paths.
+          pattern = re.compile(
+              r'''(?:"|')([^"'<> ]{1,500}\.(?:js|mjs|css|wasm|json|map|html|svg|png|jpg|jpeg|gif|webp|woff2?|ttf|ico)(?:\?[^"'<> ]*)?)(?:"|')''',
+              re.I
+          )
 
-          echo "Files downloaded:"
-          find . -type f \
-            ! -path './.git/*' \
-            ! -path './.github/*' \
-            | sort
+          class Links(HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.links = set()
+              def handle_starttag(self, tag, attrs):
+                  for key, value in attrs:
+                      if key.lower() in (
+                          "src", "href", "action", "poster",
+                          "data", "manifest"
+                      ) and value:
+                          self.links.add(value)
 
-      - name: Commit downloaded files
+          def local_path(url):
+              p = urlparse(url)
+              prefix = "/v3lla/"
+              if p.netloc != "s3.amazonaws.com" or not p.path.startswith(prefix):
+                  return None
+              path = unquote(p.path[len(prefix):])
+              if not path or ".." in path.split("/"):
+                  return None
+              return path
+
+          def fetch(url, dest):
+              os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
+              result = subprocess.run(
+                  ["curl", "-fsSL", "--max-time", "60", url, "-o", dest],
+                  stdout=subprocess.DEVNULL,
+                  stderr=subprocess.PIPE,
+              )
+              return result.returncode == 0
+
+          while queue:
+              url = queue.popleft().split("#", 1)[0]
+              path = local_path(url)
+              if not path or url in seen:
+                  continue
+              seen.add(url)
+              dest = os.path.join(root, path)
+
+              if not os.path.isfile(dest):
+                  if not fetch(url, dest):
+                      print("SKIP inaccessible:", url)
+                      continue
+
+              print("SAVED:", path)
+
+              try:
+                  with open(dest, "r", encoding="utf-8", errors="ignore") as f:
+                      content = f.read()
+              except OSError:
+                  continue
+
+              candidates = set(pattern.findall(content))
+              if path.lower().endswith((".html", ".htm")):
+                  parser = Links()
+                  parser.feed(content)
+                  candidates.update(parser.links)
+
+              for ref in candidates:
+                  ref = ref.strip()
+                  if not ref or ref.startswith((
+                      "data:", "blob:", "javascript:", "mailto:", "#"
+                  )):
+                      continue
+
+                  # Resolve paths relative to the source object.
+                  if ref.startswith("/"):
+                      candidate = base + ref
+                  else:
+                      candidate = urljoin(url, ref)
+
+                  parsed = urlparse(candidate)
+                  if parsed.netloc != "s3.amazonaws.com":
+                      continue
+                  if not parsed.path.startswith("/v3lla/"):
+                      continue
+
+                  candidate = parsed._replace(query="", fragment="").geturl()
+                  if candidate not in seen:
+                      queue.append(candidate)
+
+          print(f"Visited {len(seen)} source URLs.")
+          PY
+
+      - name: Commit mirrored files
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
           git add -A
 
           if git diff --cached --quiet; then
             echo "No changes to commit."
           else
-            git commit -m "Mirror website files"
+            git commit -m "Mirror V3lla resources"
             git push
           fi
